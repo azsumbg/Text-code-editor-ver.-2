@@ -53,22 +53,109 @@ float y_scale{ 0 };
 
 wchar_t file_in_use[100]{ L".\\res\\data\\text.dat" };
 
+edit::RANDIT RandIt{};
 
+edit::BAG<wchar_t> TxtBag(100);
 
+ID2D1Factory* iFactory{ nullptr };
+ID2D1HwndRenderTarget* Draw{ nullptr };
 
+ID2D1SolidColorBrush* statBrush{ nullptr };
+ID2D1SolidColorBrush* txtBrush{ nullptr };
+ID2D1SolidColorBrush* hgltBrush{ nullptr };
+ID2D1SolidColorBrush* inactBrush{ nullptr };
 
+ID2D1RadialGradientBrush* b1BckgBrush{ nullptr };
+ID2D1RadialGradientBrush* b2BckgBrush{ nullptr };
+ID2D1RadialGradientBrush* b3BckgBrush{ nullptr };
 
+IDWriteFactory* iWriteFactory{ nullptr };
+IDWriteTextFormat* nrmFormat{ nullptr };
+IDWriteTextFormat* midFormat{ nullptr };
+IDWriteTextFormat* bigFormat{ nullptr };
 
+ID2D1Bitmap* bmpLogo{ nullptr };
+ID2D1Bitmap* bmpIntro[30]{ nullptr };
+ID2D1Bitmap* bmpPause[30]{ nullptr };
 
+////////////////////////////////////////////////////
 
+template<typename T>concept HasRelease = requires(T check)
+{
+	check.Release();
+};
+template<HasRelease T>bool FreeMem(T** var)
+{
+	if ((*var))
+	{
+		(*var)->Release();
+		(*var) = nullptr;
 
+		return true;
+	}
 
+	return false;
+}
+void LogErr(const wchar_t* what)
+{
+	std::wofstream err{ L".\\res\\data\\error.log",std::ios::app };
+	err << what << L" time stamp: " << std::chrono::system_clock::now() << std::endl;
+	err.close();
+}
+void ClearResources()
+{
+	if (!FreeMem(&iFactory))LogErr(L"Error unloading iFactory !");
+	if (!FreeMem(&Draw))LogErr(L"Error unloading D2D1HwndRenderTarget !");
+	if (!FreeMem(&statBrush))LogErr(L"Error unloading D2D1 statBrush !");
+	if (!FreeMem(&txtBrush))LogErr(L"Error unloading D2D1 txtBrush !");
+	if (!FreeMem(&hgltBrush))LogErr(L"Error unloading D2D1 hgltBrush !");
+	if (!FreeMem(&inactBrush))LogErr(L"Error unloading D2D1 inactBrush !");
+	if (!FreeMem(&b1BckgBrush))LogErr(L"Error unloading D2D1 b1BckgBrush !");
+	if (!FreeMem(&b2BckgBrush))LogErr(L"Error unloading D2D1 b2BckgBrush !");
+	if (!FreeMem(&b3BckgBrush))LogErr(L"Error unloading D2D1 b3BckgBrush !");
+	if (!FreeMem(&iWriteFactory))LogErr(L"Error unloading D2D1 iWriteFactory !");
+	if (!FreeMem(&nrmFormat))LogErr(L"Error unloading D2D1 nrmFormat !");
+	if (!FreeMem(&midFormat))LogErr(L"Error unloading D2D1 midFormat !");
+	if (!FreeMem(&bigFormat))LogErr(L"Error unloading D2D1 bigFormat !");
+
+	if (!FreeMem(&bmpLogo))LogErr(L"Error unloading D2D1 bmpLogo !");
+	for (int i = 0; i < 29; ++i)if (!FreeMem(&bmpIntro[i]))LogErr(L"Error unloading D2D1 bmpIntro set !");
+	for (int i = 0; i < 29; ++i)if (!FreeMem(&bmpPause[i]))LogErr(L"Error unloading D2D1 bmpPause set !");
+}
+void ErrExit(int what)
+{
+	MessageBeep(MB_ICONERROR);
+	MessageBox(NULL, ErrHandle(what), L"Критична грешка !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+
+	ClearResources();
+	std::remove(tmp_file);
+	exit(1);
+}
 
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
-    
+	bIns = hInstance;
+	if (!bIns)
+	{
+		LogErr(L"Error obtaining hInstance from Windows !");
+		ErrExit(eClass);
+	}
 
-    return (int) msg.wParam;
+
+
+    
+	
+	
+
+
+
+
+
+	
+	ClearResources();
+	std::remove(tmp_file);
+
+	return (int) bMsg.wParam;
 }
