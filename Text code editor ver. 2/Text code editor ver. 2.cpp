@@ -35,6 +35,7 @@ HMENU bStore{ nullptr };
 HICON bIcon{ nullptr };
 HCURSOR bCursor{ nullptr };
 HCURSOR outCursor{ nullptr };
+HICON saveIcon{ nullptr };
 MSG bMsg{};
 BOOL bRet{ 0 };
 
@@ -51,11 +52,23 @@ D2D1_RECT_F b3TxtRect{ scr_width * 2.0f / 3.0f + 30.0f, 5.0f, scr_width - 20.0f,
 float x_scale{ 0 };
 float y_scale{ 0 };
 
-wchar_t file_in_use[100]{ L".\\res\\data\\text.dat" };
+int client_ex{ (int)(scr_width) };
+int client_ey{ (int)(scr_height - 50.0f) };
+
+wchar_t file_in_use[50]{ L".\\res\\data\\text.dat" };
+wchar_t file_name[20]{L"\0"};
+
+bool pause = false;
+bool in_client = true;
+bool show_help = false;
+
+bool b1Hglt = false;
+bool b2Hglt = false;
+bool b3Hglt = false;
 
 edit::RANDIT RandIt{};
 
-edit::BAG<wchar_t> TxtBag(100);
+edit::BAG<wchar_t> TxtBag(50);
 
 ID2D1Factory* iFactory{ nullptr };
 ID2D1HwndRenderTarget* Draw{ nullptr };
@@ -130,6 +143,145 @@ void ErrExit(int what)
 	ClearResources();
 	std::remove(tmp_file);
 	exit(1);
+}
+int GetFrame()
+{
+	static int frame{ 0 };
+	static int max_frames{ 29 };
+	static int frame_delay{ 2 };
+
+	--frame_delay;
+	if (frame_delay <= 0)
+	{
+		frame_delay = 2;
+
+		++frame;
+
+		if (frame > max_frames)frame = 0;
+	}
+
+	return frame;
+}
+
+void InitEditor()
+{
+	wcscpy_s(file_in_use, L".\\res\\data\\text.dat");
+	TxtBag.clear();
+}
+
+INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (ReceivedMsg)
+	{
+	case WM_INITDIALOG:
+		SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)(saveIcon));
+		return true;
+
+	case WM_CLOSE:
+		EndDialog(hwnd, IDCANCEL);
+		break;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDCANCEL:
+			EndDialog(hwnd, IDCANCEL);
+			break;
+
+		case IDOK:
+			if (GetDlgItemText(hwnd, IDC_NAME, file_name, 20) < 1)
+			{
+				EndDialog(hwnd, IDCANCEL);
+				break;
+			}
+			wcscpy_s(file_in_use, L".\\res\\data\\");
+			wcscat_s(file_in_use, file_name);
+			wcscat_s(file_in_use, L".dat");
+			break;
+		}
+		break;
+	}
+	
+	return (INT_PTR)(FALSE);
+}
+LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (ReceivedMsg)
+	{
+	case WM_CREATE:
+		bBar = CreateMenu();
+		bMain = CreateMenu();
+		bStore = CreateMenu();
+
+		AppendMenu(bBar, MF_POPUP, (UINT_PTR)(bMain), L"Основно меню");
+		AppendMenu(bBar, MF_POPUP, (UINT_PTR)(bStore), L"Меню за данни");
+		
+		AppendMenu(bMain, MF_STRING, mNew, L"Нов документ");
+		AppendMenu(bMain, MF_SEPARATOR, NULL, NULL);
+		AppendMenu(bMain, MF_STRING, mExit, L"Изход");
+
+		AppendMenu(bStore, MF_STRING, mSave, L"Запази документ");
+		AppendMenu(bStore, MF_SEPARATOR, NULL, NULL);
+		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
+		SetMenu(hwnd, bBar);
+
+		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL | 
+			ES_MULTILINE, 0, 50, client_ex, client_ey, hwnd, NULL, bIns, NULL);
+
+		if (!editHwnd)
+		{
+			LogErr(L"Error creating edit control in main window !");
+			ErrExit(eClass);
+		}
+
+		InitEditor();
+		break;
+
+	case WM_CLOSE:
+		pause = true;
+		if (!TxtBag.empty())
+		{
+			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+			if (MessageBox(hwnd, L"Има текст, който не е запазен и ще го загубиш !\n\nНаистина ли излизаш ?",
+				L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+			{
+				pause = false;
+				break;
+			}
+		}
+		else
+		{
+			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+			if (MessageBox(hwnd, L"Наистина ли излизаш ?",
+				L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+			{
+				pause = false;
+				break;
+			}
+		}
+		DestroyWindow(hwnd);
+		break;
+
+
+
+
+
+
+
+
+
+
+	case WM_DESTROY:
+		ClearResources();
+		PostQuitMessage(0);
+		break;
+
+
+	default: return DefWindowProc(hwnd, ReceivedMsg, wParam, lParam);
+	}
+
+
+	return (LRESULT)(FALSE);
 }
 
 
