@@ -38,6 +38,7 @@ HCURSOR outCursor{ nullptr };
 HICON saveIcon{ nullptr };
 MSG bMsg{};
 BOOL bRet{ 0 };
+UINT bTimer{ 0 };
 
 POINT cur_pos{};
 
@@ -65,6 +66,8 @@ bool show_help = false;
 bool b1Hglt = false;
 bool b2Hglt = false;
 bool b3Hglt = false;
+
+int current_text_code{ 0 };
 
 edit::RANDIT RandIt{};
 
@@ -167,6 +170,8 @@ void InitEditor()
 {
 	wcscpy_s(file_in_use, L".\\res\\data\\text.dat");
 	TxtBag.clear();
+
+	current_text_code = RandIt(50, 60000);
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -209,6 +214,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 	switch (ReceivedMsg)
 	{
 	case WM_CREATE:
+		SetTimer(hwnd, (UINT_PTR)(bTimer), 30000, NULL);
 		bBar = CreateMenu();
 		bMain = CreateMenu();
 		bStore = CreateMenu();
@@ -262,10 +268,128 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		DestroyWindow(hwnd);
 		break;
 
+	case WM_SETCURSOR:
+		GetCursorPos(&cur_pos);
+		ScreenToClient(hwnd, &cur_pos);
+		if (LOWORD(lParam) == HTCLIENT)
+		{
+			in_client = true;
+			pause = false;
+
+			if (cur_pos.y * y_scale <= 50)
+			{
+				if (cur_pos.x * x_scale >= b1Rect.left && cur_pos.x * x_scale <= b1Rect.right)
+				{
+					if (!b1Hglt)
+					{
+						mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+						b1Hglt = true;
+						b2Hglt = false;
+						b3Hglt = false;
+					}
+				}
+				else if (cur_pos.x * x_scale >= b2Rect.left && cur_pos.x * x_scale <= b2Rect.right)
+				{
+					if (!b2Hglt)
+					{
+						mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+						b1Hglt = false;
+						b2Hglt = true;
+						b3Hglt = false;
+					}
+				}
+				else if (cur_pos.x * x_scale >= b3Rect.left && cur_pos.x * x_scale <= b3Rect.right)
+				{
+					if (!b3Hglt)
+					{
+						mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+						b1Hglt = false;
+						b2Hglt = false;
+						b3Hglt = true;
+					}
+				}
+				else if (b1Hglt || b2Hglt || b3Hglt)
+				{
+					mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+					b1Hglt = false;
+					b2Hglt = false;
+					b3Hglt = false;
+				}
+
+				SetCursor(outCursor);
+
+				return true;
+			}
+
+			SetCursor(bCursor);
+
+			return true;
+		}
+		else
+		{
+			in_client = false;
+			pause = true;
+
+			if (b1Hglt || b2Hglt || b3Hglt)
+			{
+				mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+				b1Hglt = false;
+				b2Hglt = false;
+				b3Hglt = false;
+			}
+
+			SetCursor(LoadCursor(NULL, IDC_ARROW));
+
+			return true;
+		}
+		break;
+
+	case WM_TIMER:
+		if (pause)break;
+		else
+		{
+			int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
+			
+			if (buffer_size > 0)
+			{
+				wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
+
+				if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
+				else
+				{
+					GetWindowTextW(editHwnd, txt_buffer, buffer_size);
+
+					TxtBag.clear();
+					for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+				}
+			}
+		}
+		break;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case mNew:
+			if (!TxtBag.empty())
+			{
+				mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+				if (MessageBox(hwnd, L"Има текст, който не е запазен и ще го загубиш !\n\nНаистина ли изчистваш всичко ?",
+					L"Нов документ ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+				{
+					pause = false;
+					break;
+				}
+			}
+			InitEditor();
+			break;
+
+		case mExit:
+			SendMessage(hwnd, WM_CLOSE, NULL, NULL);
+			break;
 
 
-
-
+		}
+		break;
 
 
 
