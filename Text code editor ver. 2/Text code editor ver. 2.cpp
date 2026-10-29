@@ -79,7 +79,6 @@ ID2D1HwndRenderTarget* Draw{ nullptr };
 ID2D1SolidColorBrush* statBrush{ nullptr };
 ID2D1SolidColorBrush* txtBrush{ nullptr };
 ID2D1SolidColorBrush* hgltBrush{ nullptr };
-ID2D1SolidColorBrush* inactBrush{ nullptr };
 
 ID2D1RadialGradientBrush* b1BckgBrush{ nullptr };
 ID2D1RadialGradientBrush* b2BckgBrush{ nullptr };
@@ -87,8 +86,6 @@ ID2D1RadialGradientBrush* b3BckgBrush{ nullptr };
 
 IDWriteFactory* iWriteFactory{ nullptr };
 IDWriteTextFormat* nrmFormat{ nullptr };
-IDWriteTextFormat* midFormat{ nullptr };
-IDWriteTextFormat* bigFormat{ nullptr };
 
 ID2D1Bitmap* bmpLogo{ nullptr };
 ID2D1Bitmap* bmpIntro[30]{ nullptr };
@@ -125,15 +122,12 @@ void ClearResources()
 	if (!FreeMem(&statBrush))LogErr(L"Error unloading D2D1 statBrush !");
 	if (!FreeMem(&txtBrush))LogErr(L"Error unloading D2D1 txtBrush !");
 	if (!FreeMem(&hgltBrush))LogErr(L"Error unloading D2D1 hgltBrush !");
-	if (!FreeMem(&inactBrush))LogErr(L"Error unloading D2D1 inactBrush !");
 	if (!FreeMem(&b1BckgBrush))LogErr(L"Error unloading D2D1 b1BckgBrush !");
 	if (!FreeMem(&b2BckgBrush))LogErr(L"Error unloading D2D1 b2BckgBrush !");
 	if (!FreeMem(&b3BckgBrush))LogErr(L"Error unloading D2D1 b3BckgBrush !");
 	if (!FreeMem(&iWriteFactory))LogErr(L"Error unloading D2D1 iWriteFactory !");
 	if (!FreeMem(&nrmFormat))LogErr(L"Error unloading D2D1 nrmFormat !");
-	if (!FreeMem(&midFormat))LogErr(L"Error unloading D2D1 midFormat !");
-	if (!FreeMem(&bigFormat))LogErr(L"Error unloading D2D1 bigFormat !");
-
+	
 	if (!FreeMem(&bmpLogo))LogErr(L"Error unloading D2D1 bmpLogo !");
 	for (int i = 0; i < 29; ++i)if (!FreeMem(&bmpIntro[i]))LogErr(L"Error unloading D2D1 bmpIntro set !");
 	for (int i = 0; i < 29; ++i)if (!FreeMem(&bmpPause[i]))LogErr(L"Error unloading D2D1 bmpPause set !");
@@ -350,7 +344,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		{
 			int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
 			
-			if (buffer_size > 0)
+			if (buffer_size > 1)
 			{
 				wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
 
@@ -362,6 +356,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					TxtBag.clear();
 					for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
 				}
+
+				free(txt_buffer);
 			}
 		}
 		break;
@@ -387,13 +383,41 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			SendMessage(hwnd, WM_CLOSE, NULL, NULL);
 			break;
 
+		case mSave:
+			if (TxtBag.empty())
+			{
+				int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
 
+				if (buffer_size > 1)
+				{
+					wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
+
+					if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
+					else
+					{
+						GetWindowTextW(editHwnd, txt_buffer, buffer_size);
+
+						TxtBag.clear();
+						for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+					}
+
+					free(txt_buffer);
+				}
+				mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+				MessageBox(hwnd, L"Липсва текст, който да бъде запазен !\n\nПостарай се повече !",
+					L"Няма текст !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+				break;
+			}
+			else edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
+			break;
 		}
 		break;
 
-
-
-
+	case WM_SIZE:
+		client_ex = LOWORD(lParam);
+		client_ey = HIWORD(lParam);
+		MoveWindow(editHwnd, 0, 50, client_ex, client_ey, true);
+		break;
 
 	case WM_DESTROY:
 		ClearResources();
@@ -408,7 +432,183 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 	return (LRESULT)(FALSE);
 }
 
+void CreateResources()
+{
+	int win_x{ GetSystemMetrics(SM_CXSCREEN) - (int)(scr_width / 2.0f) };
+	int win_y = 50;
 
+	if (win_x + (int)(scr_width) > GetSystemMetrics(SM_CXSCREEN) || win_y + (int)(scr_height) > GetSystemMetrics(SM_CYSCREEN))
+		ErrExit(eScreen);
+	
+	bIcon = (HICON)(LoadImage(NULL, L".\\res\\bicon.ico", IMAGE_ICON, 64, 64, LR_LOADFROMFILE));
+	saveIcon = (HICON)(LoadImage(NULL, L".\\res\\save.ico", IMAGE_ICON, 64, 64, LR_LOADFROMFILE));
+
+	if (!bIcon || !saveIcon)ErrExit(eIcon);
+
+	bCursor = LoadCursorFromFile(L".\\res\\bcursor.ani");
+	outCursor = LoadCursorFromFile(L".\\res\\out.ani");
+
+	if (!bIcon || !outCursor)ErrExit(eCursor);
+
+	bWinClass.lpszClassName = bWinClassName;
+	bWinClass.hInstance = bIns;
+	bWinClass.lpfnWndProc = &WinProc;
+	bWinClass.hbrBackground = CreateSolidBrush(RGB(0, 0, 100));
+	bWinClass.hIcon = bIcon;
+	bWinClass.hCursor = bCursor;
+	bWinClass.style = CS_DROPSHADOW;
+
+	if (!RegisterClass(&bWinClass))ErrExit(eClass);
+
+	bHwnd = CreateWindow(bWinClassName, L"TEXT EDITOR 2.0", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, win_x, win_y,
+		(int)(scr_width), (int)(scr_height), NULL, NULL, bIns, NULL);
+	if (!bHwnd)ErrExit(eWindow);
+	else
+	{
+		ShowWindow(bHwnd, SW_SHOWDEFAULT);
+
+		HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &iFactory);
+		if (hr != S_OK)
+		{
+			LogErr(L"Error creating main D2D1 Factory !");
+			ErrExit(eD2D);
+		}
+
+		if (iFactory)
+		{
+			hr = iFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(bHwnd,
+				D2D1::SizeU((UINT32)(scr_width), (UINT32)(scr_height))), &Draw);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating main D2D1 HwndRenderTarget !");
+				ErrExit(eD2D);
+			}
+		}
+
+		if (Draw)
+		{
+			RECT DPIRect{};
+			D2D1_SIZE_F DIPSize{ Draw->GetSize() };
+
+			GetClientRect(bHwnd, &DPIRect);
+
+			x_scale = DIPSize.width / (DPIRect.right - DPIRect.left);
+			y_scale = DIPSize.height / (DPIRect.bottom - DPIRect.top);
+
+			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Aqua), &statBrush);
+			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Cyan), &txtBrush);
+			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Chartreuse), &hgltBrush);
+
+			D2D1_GRADIENT_STOP gStops[2]{};
+			ID2D1GradientStopCollection* gColl{ nullptr };
+
+			gStops[0].position = 0;
+			gStops[0].color = D2D1::ColorF(D2D1::ColorF::DarkSlateBlue);
+			gStops[1].position = 1.0f;
+			gStops[1].color = D2D1::ColorF(D2D1::ColorF::MidnightBlue);
+
+			hr = Draw->CreateGradientStopCollection(gStops, 2, &gColl);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating D2D1 GradientStopCollection for buttons background !");
+				ErrExit(eD2D);
+			}
+
+			if (gColl)
+			{
+				hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b1Rect.left +
+					(b1Rect.right - b1Rect.left) / 2.0f, 25.0f), D2D1::Point2F(0, 0), (b1Rect.right - b1Rect.left) / 2.0f, 25.0f),
+					gColl, &b1BckgBrush);
+				hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b2Rect.left +
+					(b2Rect.right - b2Rect.left) / 2.0f, 25.0f), D2D1::Point2F(0, 0), (b2Rect.right - b2Rect.left) / 2.0f, 25.0f),
+					gColl, &b2BckgBrush);
+				hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b3Rect.left +
+					(b3Rect.right - b3Rect.left) / 2.0f, 25.0f), D2D1::Point2F(0, 0), (b3Rect.right - b3Rect.left) / 2.0f, 25.0f),
+					gColl, &b3BckgBrush);
+
+				if (hr != S_OK)
+				{
+					LogErr(L"Error creating D2D1 RadialGradientBrushes for buttons background !");
+					ErrExit(eD2D);
+				}
+
+				if (!FreeMem(&gColl))
+				{
+					LogErr(L"Error releasing GradientStopCollection for button backgrounds !");
+					ErrExit(eD2D);
+				}
+			}
+
+			bmpLogo = Load(L".\\res\\img\\logo.png", Draw);
+			if (!bmpLogo)
+			{
+				LogErr(L"Error loading bmpLogo !");
+				ErrExit(eD2D);
+			}
+
+			for (int i = 0; i < 30; ++i)
+			{
+				wchar_t name[50]{ L".\\res\\img\\intro\\" };
+				wchar_t add[5]{};
+
+				wsprintf(add, L"%d", i);
+				wcscat_s(name, add);
+				wcscat_s(name, L".png");
+
+				bmpIntro[i] = Load(name, Draw);
+				if (!bmpIntro[i])
+				{
+					LogErr(L"Error loading bmpIntro set !");
+					ErrExit(eD2D);
+				}
+			}
+			for (int i = 0; i < 30; ++i)
+			{
+				wchar_t name[50]{ L".\\res\\img\\pause\\" };
+				wchar_t add[5]{};
+
+				wsprintf(add, L"%d", i);
+				wcscat_s(name, add);
+				wcscat_s(name, L".png");
+
+				bmpPause[i] = Load(name, Draw);
+				if (!bmpPause[i])
+				{
+					LogErr(L"Error loading bmpPause set !");
+					ErrExit(eD2D);
+				}
+			}
+		}
+
+		hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>
+			(&iWriteFactory));
+		if (hr != S_OK)
+		{
+			LogErr(L"Error creating main D2D1 WriteFactory !");
+			ErrExit(eD2D);
+		}
+
+		if (iWriteFactory)
+		{
+			hr = iWriteFactory->CreateTextFormat(L"GNABRI", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK, DWRITE_FONT_STYLE_OBLIQUE,
+				DWRITE_FONT_STRETCH_NORMAL, 18.0f, L"", &nrmFormat);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating main D2D1 WriteFactory text format !");
+				ErrExit(eD2D);
+			}
+		}
+	}
+
+	PlaySound(L".\\res\\snd\\intro.wav", NULL, SND_ASYNC);
+
+	for (int i = 0; i < 240; ++i)
+	{
+		Draw->BeginDraw();
+		Draw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
+		Draw->EndDraw();
+	}
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
@@ -419,7 +619,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		ErrExit(eClass);
 	}
 
-
+	CreateResources();
 
     
 	
