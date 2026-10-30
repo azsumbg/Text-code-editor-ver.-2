@@ -20,6 +20,8 @@ const char tmp_file[]{ ".\\res\\data\\temp.dat" };
 const wchar_t Ltmp_file[]{ L".\\res\\data\\temp.dat" };
 const char help_file[]{ ".\\res\\data\\help.dat" };
 
+const int EDIT_BUTTON{ 3003 };
+
 const int mNew{ 1001 };
 const int mExit{ 1002 };
 const int mSave{ 1003 };
@@ -29,6 +31,7 @@ WNDCLASS bWinClass{};
 HINSTANCE bIns{ nullptr };
 HWND bHwnd{ nullptr };
 HWND editHwnd{ nullptr };
+HWND statusHwnd{ nullptr };
 HMENU bBar{ nullptr };
 HMENU bMain{ nullptr };
 HMENU bStore{ nullptr };
@@ -225,8 +228,11 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
 		SetMenu(hwnd, bBar);
 
-		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL | 
+		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
 			ES_MULTILINE, 0, 50, client_ex, client_ey, hwnd, NULL, bIns, NULL);
+
+		statusHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
+			ES_MULTILINE, 0, 0, (int)(scr_width), 50, hwnd, NULL, bIns, NULL);
 
 		if (!editHwnd)
 		{
@@ -434,7 +440,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 void CreateResources()
 {
-	int win_x{ GetSystemMetrics(SM_CXSCREEN) - (int)(scr_width / 2.0f) };
+	int win_x{ GetSystemMetrics(SM_CXSCREEN) / 2 - (int)(scr_width / 2.0f) };
 	int win_y = 50;
 
 	if (win_x + (int)(scr_width) > GetSystemMetrics(SM_CXSCREEN) || win_y + (int)(scr_height) > GetSystemMetrics(SM_CYSCREEN))
@@ -474,10 +480,10 @@ void CreateResources()
 			ErrExit(eD2D);
 		}
 
-		if (iFactory)
+		if (iFactory && statusHwnd)
 		{
-			hr = iFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(bHwnd,
-				D2D1::SizeU((UINT32)(scr_width), (UINT32)(scr_height))), &Draw);
+			hr = iFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(statusHwnd,
+				D2D1::SizeU((UINT32)(scr_width), 50)), &Draw);
 			if (hr != S_OK)
 			{
 				LogErr(L"Error creating main D2D1 HwndRenderTarget !");
@@ -606,6 +612,7 @@ void CreateResources()
 	{
 		Draw->BeginDraw();
 		Draw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
+		Draw->DrawBitmap(bmpLogo, FULL_SCREEN);
 		Draw->EndDraw();
 	}
 }
@@ -621,14 +628,48 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 	CreateResources();
 
-    
-	
-	
+	while (bMsg.message != WM_QUIT)
+	{
+		if ((bRet = PeekMessage(&bMsg, NULL, NULL, NULL, PM_REMOVE)) != 0)
+		{
+			if (bRet == -1)ErrExit(eMsg);
 
+			TranslateMessage(&bMsg);
+			DispatchMessage(&bMsg);
+		}
 
+		if (pause)
+		{
+			if (show_help)continue;
+			Draw->BeginDraw();
+			Draw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
+			Draw->EndDraw();
+			continue;
+		}
 
+		Draw->BeginDraw();
 
+		if (statBrush && txtBrush && hgltBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
+		{
+			Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
+			//Draw->FillRectangle(D2D1::RectF(EDITOR_SCREEN.bottom, 0, scr_width, scr_height), statBrush);
+		
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 20.0f, 25.0f), b1BckgBrush);
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 20.0f, 25.0f), b2BckgBrush);
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b3Rect, 20.0f, 25.0f), b3BckgBrush);
 
+			if (!b1Hglt)Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, txtBrush);
+			else Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, hgltBrush);
+			if (!b2Hglt)Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, txtBrush);
+			else Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, hgltBrush);
+			if (!b3Hglt)Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, txtBrush);
+			else Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, hgltBrush);
+		}
+		
+		SetWindowPos(editHwnd, HWND_TOP, 0, 50, (int)(scr_width), (int)(scr_height), SWP_NOMOVE | SWP_NOSIZE);
+
+		Draw->EndDraw();
+	}
 	
 	ClearResources();
 	std::remove(tmp_file);
