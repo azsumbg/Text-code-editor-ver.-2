@@ -20,8 +20,6 @@ const char tmp_file[]{ ".\\res\\data\\temp.dat" };
 const wchar_t Ltmp_file[]{ L".\\res\\data\\temp.dat" };
 const char help_file[]{ ".\\res\\data\\help.dat" };
 
-const int EDIT_BUTTON{ 3003 };
-
 const int mNew{ 1001 };
 const int mExit{ 1002 };
 const int mSave{ 1003 };
@@ -238,7 +236,6 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		
 		logoHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE, 0, 0, (int)(scr_width), int(scr_height), hwnd, NULL, bIns, 
 			NULL);
-
 		if (!editHwnd || !statusHwnd || !logoHwnd)
 		{
 			LogErr(L"Error creating edit control in main window !");
@@ -425,9 +422,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 					free(txt_buffer);
 				}
-				mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
-				MessageBox(hwnd, L"Липсва текст, който да бъде запазен !\n\nПостарай се повече !",
-					L"Няма текст !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+				else
+				{
+					mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+					MessageBox(hwnd, L"Липсва текст, който да бъде запазен !\n\nПостарай се повече !",
+						L"Няма текст !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+				}
 				break;
 			}
 			else edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
@@ -447,6 +447,50 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		PostQuitMessage(0);
 		break;
 
+	case WM_PARENTNOTIFY:
+		if (LOWORD(wParam) == WM_LBUTTONDOWN)
+		{
+			POINT carret_pos{};
+			GetCaretPos(&carret_pos);
+			SendMessage(hwnd, WM_LBUTTONDOWN, wParam, lParam);
+			SetCaretPos(carret_pos.x, carret_pos.y);
+		}
+		break;
+
+	case WM_LBUTTONDOWN:
+		if (HIWORD(lParam) > 50 * y_scale)
+		{
+			if (!pause)
+			{
+				pause = true;
+				break;
+			}
+			else
+			{
+				pause = false;
+				break;
+			}
+		}
+		else
+		{
+			if (LOWORD(lParam) * x_scale >= b1Rect.left && LOWORD(lParam) * x_scale <= b1Rect.right)
+			{
+				mciSendString(L"play .\\res\\snd\\select.wav", NULL, NULL, NULL);
+				
+				SendMessage(hwnd, WM_COMMAND, (WPARAM)(mSave), NULL);
+
+				break;
+			}
+			else if (LOWORD(lParam) * x_scale >= b2Rect.left && LOWORD(lParam) * x_scale <= b3Rect.right)
+			{
+				mciSendString(L"play .\\res\\snd\\select.wav", NULL, NULL, NULL);
+
+				SendMessage(hwnd, WM_COMMAND, (WPARAM)(mLoad), NULL);
+
+				break;
+			}
+		}
+		break;
 
 	default: return DefWindowProc(hwnd, ReceivedMsg, wParam, lParam);
 	}
@@ -641,11 +685,16 @@ void CreateResources()
 
 	for (int i = 0; i < 500; ++i)
 	{
-		LogoDraw->BeginDraw();
-		LogoDraw->Clear();
-		LogoDraw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
-		LogoDraw->DrawBitmap(bmpLogo, FULL_SCREEN);
-		LogoDraw->EndDraw();
+		int frame = GetFrame();
+
+		if (bmpIntro[frame] && bmpLogo)
+		{
+			LogoDraw->BeginDraw();
+			LogoDraw->Clear();
+			LogoDraw->DrawBitmap(bmpIntro[frame], FULL_SCREEN);
+			LogoDraw->DrawBitmap(bmpLogo, FULL_SCREEN);
+			LogoDraw->EndDraw();
+		}
 	}
 }
 
