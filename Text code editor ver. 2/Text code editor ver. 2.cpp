@@ -32,6 +32,7 @@ HINSTANCE bIns{ nullptr };
 HWND bHwnd{ nullptr };
 HWND editHwnd{ nullptr };
 HWND statusHwnd{ nullptr };
+HWND logoHwnd{ nullptr };
 HMENU bBar{ nullptr };
 HMENU bMain{ nullptr };
 HMENU bStore{ nullptr };
@@ -49,9 +50,9 @@ D2D1_RECT_F b1Rect{ 20.0f, 5.0f, scr_width / 3.0f - 20.0f, 45.0f };
 D2D1_RECT_F b2Rect{ scr_width / 3.0f + 20.0f, 5.0f, scr_width * 2.0f / 3.0f - 20.0f, 45.0f };
 D2D1_RECT_F b3Rect{ scr_width * 2.0f / 3.0f + 20.0f, 5.0f, scr_width - 20.0f, 45.0f };
 
-D2D1_RECT_F b1TxtRect{ 30.0f, 5.0f, scr_width / 3.0f - 20.0f, 45.0f };
-D2D1_RECT_F b2TxtRect{ scr_width / 3.0f + 30.0f, 5.0f, scr_width * 2.0f / 3.0f - 20.0f, 45.0f };
-D2D1_RECT_F b3TxtRect{ scr_width * 2.0f / 3.0f + 30.0f, 5.0f, scr_width - 20.0f, 45.0f };
+D2D1_RECT_F b1TxtRect{ 30.0f, 10.0f, scr_width / 3.0f - 20.0f, 45.0f };
+D2D1_RECT_F b2TxtRect{ scr_width / 3.0f + 30.0f, 10.0f, scr_width * 2.0f / 3.0f - 20.0f, 45.0f };
+D2D1_RECT_F b3TxtRect{ scr_width * 2.0f / 3.0f + 50.0f, 10.0f, scr_width - 20.0f, 45.0f };
 
 float x_scale{ 0 };
 float y_scale{ 0 };
@@ -78,6 +79,7 @@ edit::BAG<wchar_t> TxtBag(50);
 
 ID2D1Factory* iFactory{ nullptr };
 ID2D1HwndRenderTarget* Draw{ nullptr };
+ID2D1HwndRenderTarget* LogoDraw{ nullptr };
 
 ID2D1SolidColorBrush* statBrush{ nullptr };
 ID2D1SolidColorBrush* txtBrush{ nullptr };
@@ -122,6 +124,7 @@ void ClearResources()
 {
 	if (!FreeMem(&iFactory))LogErr(L"Error unloading iFactory !");
 	if (!FreeMem(&Draw))LogErr(L"Error unloading D2D1HwndRenderTarget !");
+	if (!FreeMem(&LogoDraw))LogErr(L"Error unloading D2D1HwndRenderTarget !");
 	if (!FreeMem(&statBrush))LogErr(L"Error unloading D2D1 statBrush !");
 	if (!FreeMem(&txtBrush))LogErr(L"Error unloading D2D1 txtBrush !");
 	if (!FreeMem(&hgltBrush))LogErr(L"Error unloading D2D1 hgltBrush !");
@@ -231,10 +234,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
 			ES_MULTILINE, 0, 50, client_ex, client_ey, hwnd, NULL, bIns, NULL);
 
-		statusHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
-			ES_MULTILINE, 0, 0, (int)(scr_width), 50, hwnd, NULL, bIns, NULL);
+		statusHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE, 0, 0, (int)(scr_width), 50, hwnd, NULL, bIns, NULL);
+		
+		logoHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE, 0, 0, (int)(scr_width), int(scr_height), hwnd, NULL, bIns, 
+			NULL);
 
-		if (!editHwnd)
+		if (!editHwnd || !statusHwnd || !logoHwnd)
 		{
 			LogErr(L"Error creating edit control in main window !");
 			ErrExit(eClass);
@@ -276,7 +281,9 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			in_client = true;
 			pause = false;
 
-			if (cur_pos.y * y_scale <= 50)
+			ShowWindow(logoHwnd, false);
+
+			if (cur_pos.y * y_scale < 50)
 			{
 				if (cur_pos.x * x_scale >= b1Rect.left && cur_pos.x * x_scale <= b1Rect.right)
 				{
@@ -320,7 +327,14 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 				return true;
 			}
-
+			else if (b1Hglt || b2Hglt || b3Hglt)
+			{
+				mciSendString(L"play .\\res\\snd\\click.wav", NULL, NULL, NULL);
+				b1Hglt = false;
+				b2Hglt = false;
+				b3Hglt = false;
+			}
+			
 			SetCursor(bCursor);
 
 			return true;
@@ -329,6 +343,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		{
 			in_client = false;
 			pause = true;
+
+			ShowWindow(logoHwnd, true);
 
 			if (b1Hglt || b2Hglt || b3Hglt)
 			{
@@ -423,6 +439,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		client_ex = LOWORD(lParam);
 		client_ey = HIWORD(lParam);
 		MoveWindow(editHwnd, 0, 50, client_ex, client_ey, true);
+		MoveWindow(statusHwnd, 0, 0, client_ex, 50, true);
 		break;
 
 	case WM_DESTROY:
@@ -491,12 +508,12 @@ void CreateResources()
 			}
 		}
 
-		if (Draw)
+		if (Draw && statusHwnd)
 		{
 			RECT DPIRect{};
 			D2D1_SIZE_F DIPSize{ Draw->GetSize() };
 
-			GetClientRect(bHwnd, &DPIRect);
+			GetClientRect(statusHwnd, &DPIRect);
 
 			x_scale = DIPSize.width / (DPIRect.right - DPIRect.left);
 			y_scale = DIPSize.height / (DPIRect.bottom - DPIRect.top);
@@ -544,8 +561,22 @@ void CreateResources()
 					ErrExit(eD2D);
 				}
 			}
+		}
 
-			bmpLogo = Load(L".\\res\\img\\logo.png", Draw);
+		if (iFactory && logoHwnd)
+		{
+			hr = iFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(logoHwnd,
+				D2D1::SizeU((UINT32)(scr_width), (UINT32)(scr_height))), &LogoDraw);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating main logo D2D1 HwndRenderTarget !");
+				ErrExit(eD2D);
+			}
+		}
+
+		if (LogoDraw)
+		{
+			bmpLogo = Load(L".\\res\\img\\logo.png", LogoDraw);
 			if (!bmpLogo)
 			{
 				LogErr(L"Error loading bmpLogo !");
@@ -561,7 +592,7 @@ void CreateResources()
 				wcscat_s(name, add);
 				wcscat_s(name, L".png");
 
-				bmpIntro[i] = Load(name, Draw);
+				bmpIntro[i] = Load(name, LogoDraw);
 				if (!bmpIntro[i])
 				{
 					LogErr(L"Error loading bmpIntro set !");
@@ -577,7 +608,7 @@ void CreateResources()
 				wcscat_s(name, add);
 				wcscat_s(name, L".png");
 
-				bmpPause[i] = Load(name, Draw);
+				bmpPause[i] = Load(name, LogoDraw);
 				if (!bmpPause[i])
 				{
 					LogErr(L"Error loading bmpPause set !");
@@ -608,12 +639,13 @@ void CreateResources()
 
 	PlaySound(L".\\res\\snd\\intro.wav", NULL, SND_ASYNC);
 
-	for (int i = 0; i < 240; ++i)
+	for (int i = 0; i < 500; ++i)
 	{
-		Draw->BeginDraw();
-		Draw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
-		Draw->DrawBitmap(bmpLogo, FULL_SCREEN);
-		Draw->EndDraw();
+		LogoDraw->BeginDraw();
+		LogoDraw->Clear();
+		LogoDraw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
+		LogoDraw->DrawBitmap(bmpLogo, FULL_SCREEN);
+		LogoDraw->EndDraw();
 	}
 }
 
@@ -641,9 +673,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		if (pause)
 		{
 			if (show_help)continue;
-			Draw->BeginDraw();
-			Draw->DrawBitmap(bmpIntro[GetFrame()], FULL_SCREEN);
-			Draw->EndDraw();
+			LogoDraw->BeginDraw();
+			LogoDraw->DrawBitmap(bmpPause[GetFrame()], FULL_SCREEN);
+			LogoDraw->EndDraw();
 			continue;
 		}
 
@@ -652,7 +684,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		if (statBrush && txtBrush && hgltBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
 		{
 			Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
-			//Draw->FillRectangle(D2D1::RectF(EDITOR_SCREEN.bottom, 0, scr_width, scr_height), statBrush);
 		
 			Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 20.0f, 25.0f), b1BckgBrush);
 			Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 20.0f, 25.0f), b2BckgBrush);
@@ -666,8 +697,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 			else Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, hgltBrush);
 		}
 		
-		SetWindowPos(editHwnd, HWND_TOP, 0, 50, (int)(scr_width), (int)(scr_height), SWP_NOMOVE | SWP_NOSIZE);
-
 		Draw->EndDraw();
 	}
 	
