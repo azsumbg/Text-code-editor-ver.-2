@@ -3,6 +3,7 @@
 #include <mmsystem.h>
 #include <d2d1.h>
 #include <dwrite.h>
+#include "FCheck.h"
 #include "D2BMPLOADER.h"
 #include "ErrH.h"
 #include "EditSrv.h"
@@ -11,6 +12,7 @@
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
+#pragma comment(lib, "fcheck.lib")
 #pragma comment(lib, "d2bmploader.lib")
 #pragma comment(lib, "errh.lib")
 #pragma comment(lib, "editsrv.lib")
@@ -22,6 +24,7 @@ const char help_file[]{ ".\\res\\data\\help.dat" };
 
 const int mNew{ 1001 };
 const int mExit{ 1002 };
+const int mSaveFileName{ 1005 };
 const int mSave{ 1003 };
 const int mLoad{ 1004 };
 
@@ -68,6 +71,8 @@ bool show_help = false;
 bool b1Hglt = false;
 bool b2Hglt = false;
 bool b3Hglt = false;
+
+bool append_file = false;
 
 int current_text_code{ 0 };
 
@@ -170,6 +175,10 @@ void InitEditor()
 	TxtBag.clear();
 
 	current_text_code = RandIt(50, 60000);
+
+	append_file = false;
+
+	SetWindowTextW(editHwnd, L"\0");
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -224,6 +233,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		AppendMenu(bMain, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bMain, MF_STRING, mExit, L"Изход");
 
+		AppendMenu(bStore, MF_STRING, mSaveFileName, L"Задай име на файл");
 		AppendMenu(bStore, MF_STRING, mSave, L"Запази документ");
 		AppendMenu(bStore, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
@@ -241,6 +251,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			LogErr(L"Error creating edit control in main window !");
 			ErrExit(eClass);
 		}
+
+		SetCaretPos(10, 55);
 
 		InitEditor();
 		break;
@@ -402,6 +414,30 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			SendMessage(hwnd, WM_CLOSE, NULL, NULL);
 			break;
 
+		case mSaveFileName:
+			if (DialogBox(bIns, MAKEINTRESOURCE(IDD_FILE), hwnd, &DlgProc) == IDOK)
+			{
+				int result{ 0 };
+				CheckFile(file_in_use, &result);
+
+				if (result == FILE_EXIST)append_file = true;
+			}
+			else
+			{
+				int result{ 0 };
+				
+				CheckFile(file_in_use, &result);
+
+				if (result == FILE_NOT_EXIST)
+				{
+					mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+					wcscpy_s(file_in_use, L".\\res\\data\\text.dat");
+					MessageBox(hwnd, L"Недопустимо име на файл !", L"Грешка !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+					break;
+				}
+			}
+			break;
+		
 		case mSave:
 			if (TxtBag.empty())
 			{
@@ -432,6 +468,44 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			}
 			else edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
 			break;
+
+		case mLoad:
+			if (!TxtBag.empty())
+			{
+				mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+				if (MessageBox(hwnd, L"Има незаписан текст, който ще бъде загубен !\n\nПрезаписваш ли го ?",
+					L"Презапик !", MB_YESNO | MB_APPLMODAL | MB_ICONQUESTION) == IDNO)break;
+			}
+			else
+			{
+				int result{ 0 };
+				CheckFile(file_in_use, &result);
+				if (result == FILE_NOT_EXIST)
+				{
+					mciSendStringW(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+					MessageBox(hwnd, L"Зададено е грешно име на файл !", L"Грешка !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+					break;
+				}
+			
+				TxtBag.clear();
+				edit::LoadFile(file_in_use, TxtBag);
+
+				if (!TxtBag.empty())
+				{
+					wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
+
+					if (!buffer)throw edit::EXCEPTION(BAD_PTR);
+					else
+					{
+						for (size_t i = 0; i < TxtBag.size(); ++i)buffer[i] = TxtBag[i];
+
+						SetWindowTextW(editHwnd, buffer);
+						
+						free(buffer);
+					}
+				}
+			}
+			break;
 		}
 		break;
 
@@ -444,6 +518,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 	case WM_DESTROY:
 		ClearResources();
+		std::remove(tmp_file);
 		PostQuitMessage(0);
 		break;
 
@@ -501,6 +576,16 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 void CreateResources()
 {
+	int result{ 0 };
+	CheckFile(Ltmp_file, &result);
+	if (result == FILE_EXIST)ErrExit(eStarted);
+	else
+	{
+		std::wofstream start{ Ltmp_file };
+		start << L"Program started at: " << std::chrono::system_clock::now();
+		start.close();
+	}
+
 	int win_x{ GetSystemMetrics(SM_CXSCREEN) / 2 - (int)(scr_width / 2.0f) };
 	int win_y = 50;
 
@@ -527,7 +612,7 @@ void CreateResources()
 
 	if (!RegisterClass(&bWinClass))ErrExit(eClass);
 
-	bHwnd = CreateWindow(bWinClassName, L"TEXT EDITOR 2.0", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX, win_x, win_y,
+	bHwnd = CreateWindow(bWinClassName, L"TEXT EDITOR 2.0", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, win_x, win_y,
 		(int)(scr_width), (int)(scr_height), NULL, NULL, bIns, NULL);
 	if (!bHwnd)ErrExit(eWindow);
 	else
@@ -722,9 +807,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		if (pause)
 		{
 			if (show_help)continue;
-			LogoDraw->BeginDraw();
-			LogoDraw->DrawBitmap(bmpPause[GetFrame()], FULL_SCREEN);
-			LogoDraw->EndDraw();
+			if (LogoDraw)
+			{
+				LogoDraw->BeginDraw();
+				LogoDraw->DrawBitmap(bmpPause[GetFrame()], FULL_SCREEN);
+				LogoDraw->EndDraw();
+			}
 			continue;
 		}
 
@@ -749,8 +837,5 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 		Draw->EndDraw();
 	}
 	
-	ClearResources();
-	std::remove(tmp_file);
-
 	return (int) bMsg.wParam;
 }
