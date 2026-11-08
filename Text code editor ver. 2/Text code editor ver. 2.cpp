@@ -26,6 +26,8 @@ const char autosave_file[]{ ".\\res\\data\\autosave.dat" };
 const wchar_t Lautosave_file[]{ L".\\res\\data\\autosave.dat" };
 
 const int mNew{ 1001 };
+const int mSetAutosave{ 1006 };
+const int mShowAutosave{ 1007 };
 const int mExit{ 1002 };
 const int mSaveFileName{ 1005 };
 const int mSave{ 1003 };
@@ -47,6 +49,9 @@ HICON saveIcon{ nullptr };
 MSG bMsg{};
 BOOL bRet{ 0 };
 UINT bTimer{ 0 };
+
+UINT minutes_for_autosave{ 1 };
+UINT minutes_remaining{ 1 };
 
 POINT cur_pos{};
 
@@ -177,6 +182,9 @@ void InitEditor()
 	wcscpy_s(file_in_use, L".\\res\\data\\text.dat");
 	TxtBag.clear();
 
+	minutes_for_autosave = 1;
+	minutes_remaining = 1;
+
 	current_text_code = RandIt(50, 60000);
 
 	append_file = false;
@@ -250,12 +258,54 @@ INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 	
 	return (INT_PTR)(FALSE);
 }
+INT_PTR CALLBACK TimeDlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (ReceivedMsg)
+	{
+	case WM_INITDIALOG:
+		SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)(bIcon));
+		return true;
+
+	case WM_CLOSE:
+		EndDialog(hwnd, IDCANCEL);
+		break;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDCANCEL:
+			EndDialog(hwnd, IDCANCEL);
+			break;
+
+		case IDOK:
+			{
+				BOOL success{ 0 };
+				
+				minutes_for_autosave = GetDlgItemInt(hwnd, IDC_MINUTES, &success, FALSE);
+
+				if (!success)
+				{
+					minutes_for_autosave = 1;
+					EndDialog(hwnd, IDCANCEL);
+					break;
+				}
+
+				EndDialog(hwnd, IDOK);
+				break;
+			}
+			break;
+		}
+		break;
+	}
+
+	return (INT_PTR)(FALSE);
+}
 LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (ReceivedMsg)
 	{
 	case WM_CREATE:
-		SetTimer(hwnd, (UINT_PTR)(bTimer), 30000, NULL);
+		SetTimer(hwnd, (UINT_PTR)(bTimer), 60000, NULL);
 		bBar = CreateMenu();
 		bMain = CreateMenu();
 		bStore = CreateMenu();
@@ -268,6 +318,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		AppendMenu(bMain, MF_STRING, mExit, L"Изход");
 
 		AppendMenu(bStore, MF_STRING, mSaveFileName, L"Задай име на файл");
+		AppendMenu(bStore, MF_STRING, mSetAutosave, L"Задай минути за autosave (0 - OFF)");
+		AppendMenu(bStore, MF_STRING, mShowAutosave, L"Покажи текущото време за autosave");
 		AppendMenu(bStore, MF_STRING, mSave, L"Запази документ");
 		AppendMenu(bStore, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
@@ -404,27 +456,35 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		break;
 
 	case WM_TIMER:
-		if (pause)break;
+		if (pause || minutes_for_autosave == 0)break;
 		else
 		{
-			int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
-			
-			if (buffer_size > 1)
+			++minutes_remaining;
+			if (minutes_remaining >= minutes_for_autosave)
 			{
-				wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
+				minutes_remaining = 0;
 
-				if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
-				else
+				int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
+
+				if (buffer_size > 1)
 				{
-					GetWindowTextW(editHwnd, txt_buffer, buffer_size);
+					wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
 
-					TxtBag.clear();
-					for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+					if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
+					else
+					{
+						GetWindowTextW(editHwnd, txt_buffer, buffer_size);
+
+						TxtBag.clear();
+						for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+					}
+
+					free(txt_buffer);
+
+					std::remove(autosave_file);
+
+					edit::SaveFile(Lautosave_file, TxtBag, current_text_code, true);
 				}
-
-				free(txt_buffer);
-
-				edit::SaveFile(Lautosave_file, TxtBag, current_text_code, true);
 			}
 		}
 		break;
@@ -474,6 +534,26 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			}
 			break;
 		
+		case mSetAutosave:
+			DialogBox(bIns, MAKEINTRESOURCE(IDD_TIME), hwnd, &TimeDlgProc);
+			break;
+
+		case mShowAutosave:
+			if (minutes_for_autosave == 1)MessageBox(hwnd, L"Време за autosave: 1 минута !", L"Информация !",
+				MB_APPLMODAL | MB_OK | MB_ICONINFORMATION);
+			else
+			{
+				wchar_t stat_txt[75]{ L"Време за autosave: " };
+				wchar_t add[5]{ L"\0" };
+				
+				wsprintf(add, L"%d", minutes_for_autosave);
+				wcscat_s(stat_txt, add);
+				wcscat_s(stat_txt, L" минути !");
+
+				MessageBox(hwnd, stat_txt, L"Информация !", MB_APPLMODAL | MB_OK | MB_ICONINFORMATION);
+			}
+			break;
+
 		case mSave:
 			if (TxtBag.empty())
 			{
