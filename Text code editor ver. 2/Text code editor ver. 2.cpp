@@ -8,6 +8,7 @@
 #include "ErrH.h"
 #include "EditSrv.h"
 #include <chrono>
+#include <cstdlib>
 
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "d2d1.lib")
@@ -21,6 +22,8 @@ const wchar_t bWinClassName[]{ L"EditD2" };
 const char tmp_file[]{ ".\\res\\data\\temp.dat" };
 const wchar_t Ltmp_file[]{ L".\\res\\data\\temp.dat" };
 const char help_file[]{ ".\\res\\data\\help.dat" };
+const char autosave_file[]{ ".\\res\\data\\autosave.dat" };
+const wchar_t Lautosave_file[]{ L".\\res\\data\\autosave.dat" };
 
 const int mNew{ 1001 };
 const int mExit{ 1002 };
@@ -78,7 +81,7 @@ int current_text_code{ 0 };
 
 edit::RANDIT RandIt{};
 
-edit::BAG<wchar_t> TxtBag(50);
+edit::BAG<wchar_t> TxtBag;
 
 ID2D1Factory* iFactory{ nullptr };
 ID2D1HwndRenderTarget* Draw{ nullptr };
@@ -179,6 +182,37 @@ void InitEditor()
 	append_file = false;
 
 	SetWindowTextW(editHwnd, L"\0");
+
+	if (edit::FileExist(Lautosave_file))
+	{
+		std::wifstream autosave{ Lautosave_file };
+
+		size_t saved_size{ 0 };
+		
+		autosave >> saved_size;
+		autosave >> current_text_code;
+
+		edit::LoadFile(TxtBag, Lautosave_file);
+
+		wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(saved_size,sizeof(wchar_t))) };
+		if (!buffer)throw edit::EXCEPTION(BAD_PTR);
+		else
+		{
+			for (size_t i = 0; i < saved_size; ++i)
+			{
+				int letter{ 0 };
+				autosave >> letter;
+				
+				TxtBag.push_back(edit::DecodeChar(letter, current_text_code));
+				
+				buffer[i] = TxtBag[i];
+			}
+
+			SetWindowTextW(editHwnd, buffer);
+		}
+
+		autosave.close();
+	}
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -389,6 +423,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 				}
 
 				free(txt_buffer);
+
+				edit::SaveFile(Lautosave_file, TxtBag, current_text_code, true);
 			}
 		}
 		break;
@@ -466,7 +502,11 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 				}
 				break;
 			}
-			else edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
+			else
+			{
+				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
+				edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
+			}
 			break;
 
 		case mLoad:
@@ -474,7 +514,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			{
 				mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
 				if (MessageBox(hwnd, L"Има незаписан текст, който ще бъде загубен !\n\nПрезаписваш ли го ?",
-					L"Презапик !", MB_YESNO | MB_APPLMODAL | MB_ICONQUESTION) == IDNO)break;
+					L"Презапис !", MB_YESNO | MB_APPLMODAL | MB_ICONQUESTION) == IDNO)break;
 			}
 			else
 			{
@@ -486,11 +526,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					MessageBox(hwnd, L"Зададено е грешно име на файл !", L"Грешка !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
 					break;
 				}
-			
-				TxtBag.clear();
-				edit::LoadFile(file_in_use, TxtBag);
 
-				if (!TxtBag.empty())
+				TxtBag.clear();
+				
+				edit::LoadFile(TxtBag, file_in_use);
+				
+				if (TxtBag.size() > 1)
 				{
 					wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
 
@@ -500,7 +541,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 						for (size_t i = 0; i < TxtBag.size(); ++i)buffer[i] = TxtBag[i];
 
 						SetWindowTextW(editHwnd, buffer);
-						
+
+						TxtBag.clear();
 						free(buffer);
 					}
 				}
@@ -569,7 +611,6 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 	default: return DefWindowProc(hwnd, ReceivedMsg, wParam, lParam);
 	}
-
 
 	return (LRESULT)(FALSE);
 }

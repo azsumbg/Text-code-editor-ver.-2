@@ -111,7 +111,7 @@ namespace edit
 			free(mPtr);
 		}
 
-		BAG& operator = (const BAG& other)
+		BAG& operator = (BAG& other)
 		{
 			if (mPtr == other.mPtr)throw EXCEPTION(BAD_PARAM);
 
@@ -144,7 +144,7 @@ namespace edit
 			
 			return (*this);
 		}
-		BAG& operator = (const BAG&& other)
+		BAG& operator = (BAG&& other)
 		{
 			if (mPtr == other.mPtr)throw EXCEPTION(BAD_PARAM);
 
@@ -290,7 +290,7 @@ namespace edit
 				{
 					++max_lenght;
 
-					T* temp{ reinterpret_cast<T*>(realloc(mPtr,max_lenght * sizeof(T))) };
+					T* temp{ reinterpret_cast<T*>(realloc(mPtr, max_lenght * sizeof(T))) };
 					if (!temp)throw EXCEPTION(BAD_MEMORY);
 					else
 					{
@@ -418,7 +418,7 @@ namespace edit
 			{
 				if (index >= next_pos || next_pos == 0)throw EXCEPTION(BAD_PARAM);
 
-				for (size_t i = index; i < next_pos - 1; --i)mPtr[i] = mPtr[i + 1];
+				for (size_t i = index; i < next_pos - 1; ++i)mPtr[i] = mPtr[i + 1];
 
 				--next_pos;
 			}
@@ -579,5 +579,5 @@ namespace edit
 	bool EDITSRV_API FileExist(const wchar_t* name);
 
 	size_t EDITSRV_API SaveFile(const wchar_t* name, BAG<wchar_t>& Bag, int code, bool append = true);
-	bool EDITSRV_API LoadFile(const wchar_t* name, BAG<wchar_t>& Bag);
+	bool EDITSRV_API LoadFile(BAG<wchar_t>& Bag, const wchar_t* name);
 }
