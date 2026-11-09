@@ -42,6 +42,7 @@ HWND logoHwnd{ nullptr };
 HMENU bBar{ nullptr };
 HMENU bMain{ nullptr };
 HMENU bStore{ nullptr };
+HMENU bTime{ nullptr };
 HICON bIcon{ nullptr };
 HCURSOR bCursor{ nullptr };
 HCURSOR outCursor{ nullptr };
@@ -192,34 +193,17 @@ void InitEditor()
 	SetWindowTextW(editHwnd, L"\0");
 
 	if (edit::FileExist(Lautosave_file))
-	{
-		std::wifstream autosave{ Lautosave_file };
-
-		size_t saved_size{ 0 };
-		
-		autosave >> saved_size;
-		autosave >> current_text_code;
-
+	{		
 		edit::LoadFile(TxtBag, Lautosave_file);
 
-		wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(saved_size,sizeof(wchar_t))) };
-		if (!buffer)throw edit::EXCEPTION(BAD_PTR);
-		else
+		if (!TxtBag.empty())
 		{
-			for (size_t i = 0; i < saved_size; ++i)
-			{
-				int letter{ 0 };
-				autosave >> letter;
-				
-				TxtBag.push_back(edit::DecodeChar(letter, current_text_code));
-				
-				buffer[i] = TxtBag[i];
-			}
-
+			wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
+			if (!buffer)throw edit::EXCEPTION(BAD_PTR);
+			else for (size_t i = 0; i < TxtBag.size(); ++i) buffer[i] = TxtBag[i];
+			
 			SetWindowTextW(editHwnd, buffer);
 		}
-
-		autosave.close();
 	}
 }
 
@@ -251,6 +235,7 @@ INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			wcscpy_s(file_in_use, L".\\res\\data\\");
 			wcscat_s(file_in_use, file_name);
 			wcscat_s(file_in_use, L".dat");
+			EndDialog(hwnd, IDOK);
 			break;
 		}
 		break;
@@ -309,20 +294,25 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		bBar = CreateMenu();
 		bMain = CreateMenu();
 		bStore = CreateMenu();
+		bTime = CreateMenu();
 
 		AppendMenu(bBar, MF_POPUP, (UINT_PTR)(bMain), L"Основно меню");
 		AppendMenu(bBar, MF_POPUP, (UINT_PTR)(bStore), L"Меню за данни");
+		AppendMenu(bBar, MF_POPUP, (UINT_PTR)(bTime), L"Таймер меню");
 		
 		AppendMenu(bMain, MF_STRING, mNew, L"Нов документ");
 		AppendMenu(bMain, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bMain, MF_STRING, mExit, L"Изход");
 
 		AppendMenu(bStore, MF_STRING, mSaveFileName, L"Задай име на файл");
-		AppendMenu(bStore, MF_STRING, mSetAutosave, L"Задай минути за autosave (0 - OFF)");
-		AppendMenu(bStore, MF_STRING, mShowAutosave, L"Покажи текущото време за autosave");
 		AppendMenu(bStore, MF_STRING, mSave, L"Запази документ");
 		AppendMenu(bStore, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
+		
+		AppendMenu(bTime, MF_STRING, mSetAutosave, L"Задай минути за autosave (0 - OFF)");
+		AppendMenu(bTime, MF_SEPARATOR, NULL, NULL);
+		AppendMenu(bTime, MF_STRING, mShowAutosave, L"Покажи текущото време за autosave");
+		
 		SetMenu(hwnd, bBar);
 
 		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
@@ -338,6 +328,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			ErrExit(eClass);
 		}
 
+		SetFocus(editHwnd);
 		SetCaretPos(10, 55);
 
 		InitEditor();
@@ -348,7 +339,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		if (!TxtBag.empty())
 		{
 			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
-			if (MessageBox(hwnd, L"Има текст, който не е запазен и ще го загубиш !\n\nНаистина ли излизаш ?",
+			if (MessageBox(hwnd, L"Има текст, който не е запазен !\n\nНаистина ли излизаш ?",
 				L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
 			{
 				pause = false;
@@ -357,12 +348,40 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		}
 		else
 		{
-			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
-			if (MessageBox(hwnd, L"Наистина ли излизаш ?",
-				L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+			int unsaved_txt_size{ GetWindowTextLengthW(editHwnd) };
+			
+			if (unsaved_txt_size > 0)
 			{
-				pause = false;
-				break;
+				wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(unsaved_txt_size, sizeof(wchar_t))) };
+
+				if (!buffer)throw edit::EXCEPTION(BAD_MEMORY);
+				else
+				{
+					GetWindowTextW(editHwnd, buffer, unsaved_txt_size);
+
+					for (int i = 0; i < unsaved_txt_size; ++i)TxtBag.push_back(buffer[i]);
+				}
+				if (!TxtBag.empty())
+				{
+					mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+					if (MessageBox(hwnd, L"Има незаписан текст !\n\nНаистина ли излизаш ?",
+						L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+					{
+						pause = false;
+						break;
+					}
+					edit::SaveFile(Lautosave_file, TxtBag, current_text_code, false);
+				}
+			}
+			else
+			{
+				mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+				if (MessageBox(hwnd, L"Наистина ли излизаш ?",
+					L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
+				{
+					pause = false;
+					break;
+				}
 			}
 		}
 		DestroyWindow(hwnd);
@@ -557,7 +576,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		case mSave:
 			if (TxtBag.empty())
 			{
-				int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
+				int buffer_size{ GetWindowTextLengthW(editHwnd) };
 
 				if (buffer_size > 1)
 				{
@@ -570,8 +589,13 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 						TxtBag.clear();
 						for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+						
+						edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
 					}
-
+					
+					if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
+					
+					TxtBag.clear();
 					free(txt_buffer);
 				}
 				else
@@ -586,6 +610,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			{
 				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
 				edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
+				TxtBag.clear();
 			}
 			break;
 
@@ -627,6 +652,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					}
 				}
 			}
+			if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
 			break;
 		}
 		break;
