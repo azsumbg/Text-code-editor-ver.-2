@@ -27,6 +27,7 @@ const wchar_t Lautosave_file[]{ L".\\res\\data\\autosave.dat" };
 
 const int mNew{ 1001 };
 const int mSetAutosave{ 1006 };
+const int mLoadAutosave{ 1008 };
 const int mShowAutosave{ 1007 };
 const int mExit{ 1002 };
 const int mSaveFileName{ 1005 };
@@ -191,20 +192,6 @@ void InitEditor()
 	append_file = false;
 
 	SetWindowTextW(editHwnd, L"\0");
-
-	if (edit::FileExist(Lautosave_file))
-	{		
-		edit::LoadFile(TxtBag, Lautosave_file);
-
-		if (!TxtBag.empty())
-		{
-			wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
-			if (!buffer)throw edit::EXCEPTION(BAD_PTR);
-			else for (size_t i = 0; i < TxtBag.size(); ++i) buffer[i] = TxtBag[i];
-			
-			SetWindowTextW(editHwnd, buffer);
-		}
-	}
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -309,6 +296,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		AppendMenu(bStore, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bStore, MF_STRING, mLoad, L"Зареди документ");
 		
+		AppendMenu(bTime, MF_STRING, mLoadAutosave, L"Зареди от autosave");
 		AppendMenu(bTime, MF_STRING, mSetAutosave, L"Задай минути за autosave (0 - OFF)");
 		AppendMenu(bTime, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(bTime, MF_STRING, mShowAutosave, L"Покажи текущото време за autosave");
@@ -336,7 +324,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 	case WM_CLOSE:
 		pause = true;
-		if (!TxtBag.empty())
+		if (TxtBag.size() > 1)
 		{
 			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
 			if (MessageBox(hwnd, L"Има текст, който не е запазен !\n\nНаистина ли излизаш ?",
@@ -345,6 +333,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 				pause = false;
 				break;
 			}
+
+			edit::SaveFile(Lautosave_file, TxtBag, current_text_code, false);
 		}
 		else
 		{
@@ -353,16 +343,17 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			if (unsaved_txt_size > 0)
 			{
 				wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(unsaved_txt_size, sizeof(wchar_t))) };
-
+			
 				if (!buffer)throw edit::EXCEPTION(BAD_MEMORY);
 				else
 				{
 					GetWindowTextW(editHwnd, buffer, unsaved_txt_size);
-
+					
 					for (int i = 0; i < unsaved_txt_size; ++i)TxtBag.push_back(buffer[i]);
 				}
 				if (!TxtBag.empty())
 				{
+
 					mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
 					if (MessageBox(hwnd, L"Има незаписан текст !\n\nНаистина ли излизаш ?",
 						L"Изход ?", MB_YESNO | MB_ICONASTERISK | MB_APPLMODAL) == IDNO)
@@ -553,6 +544,30 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			}
 			break;
 		
+		case mLoadAutosave:
+			if (!edit::FileExist(Lautosave_file))
+			{
+				mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+				MessageBox(hwnd, L"Не съществува autosave файл !", L"Липсва файл !", MB_OK | MB_APPLMODAL | MB_ICONASTERISK);
+				break;
+			}
+			else
+			{
+				TxtBag.clear();
+
+				edit::LoadFile(TxtBag, Lautosave_file);
+
+				if (!TxtBag.empty())
+				{
+					wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
+					if (!buffer)throw edit::EXCEPTION(BAD_PTR);
+					else for (size_t i = 0; i < TxtBag.size(); ++i) buffer[i] = TxtBag[i];
+
+					SetWindowTextW(editHwnd, buffer);
+				}
+			}
+			break;
+
 		case mSetAutosave:
 			DialogBox(bIns, MAKEINTRESOURCE(IDD_TIME), hwnd, &TimeDlgProc);
 			break;
