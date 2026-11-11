@@ -83,6 +83,7 @@ bool b2Hglt = false;
 bool b3Hglt = false;
 
 bool append_file = false;
+bool allready_saved{ false };
 
 int current_text_code{ 0 };
 
@@ -186,6 +187,8 @@ void InitEditor()
 
 	minutes_for_autosave = 1;
 	minutes_remaining = 1;
+
+	allready_saved = false;
 
 	current_text_code = RandIt(50, 60000);
 
@@ -324,7 +327,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 	case WM_CLOSE:
 		pause = true;
-		if (TxtBag.size() > 1)
+		if (!TxtBag.empty())
 		{
 			mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
 			if (MessageBox(hwnd, L"Има текст, който не е запазен !\n\nНаистина ли излизаш ?",
@@ -335,12 +338,13 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			}
 
 			edit::SaveFile(Lautosave_file, TxtBag, current_text_code, false);
+			allready_saved = false;
 		}
-		else
+		else if(!allready_saved)
 		{
-			int unsaved_txt_size{ GetWindowTextLengthW(editHwnd) };
+			int unsaved_txt_size{ GetWindowTextLengthW(editHwnd) + 1 };
 			
-			if (unsaved_txt_size > 0)
+			if (unsaved_txt_size > 1)
 			{
 				wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(unsaved_txt_size, sizeof(wchar_t))) };
 			
@@ -494,6 +498,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					std::remove(autosave_file);
 
 					edit::SaveFile(Lautosave_file, TxtBag, current_text_code, true);
+					allready_saved = false;
 				}
 			}
 		}
@@ -562,9 +567,16 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t))) };
 					if (!buffer)throw edit::EXCEPTION(BAD_PTR);
 					else for (size_t i = 0; i < TxtBag.size(); ++i) buffer[i] = TxtBag[i];
-
+					
 					SetWindowTextW(editHwnd, buffer);
+					if (TxtBag.size() == 1)pause = true;
+					TxtBag.clear();
+					free(buffer);
 				}
+
+				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
+
+				allready_saved = false;
 			}
 			break;
 
@@ -591,7 +603,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		case mSave:
 			if (TxtBag.empty())
 			{
-				int buffer_size{ GetWindowTextLengthW(editHwnd) };
+				int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
 
 				if (buffer_size > 1)
 				{
@@ -609,7 +621,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					}
 					
 					if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
-					
+					allready_saved = true;
 					TxtBag.clear();
 					free(txt_buffer);
 				}
@@ -625,6 +637,9 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			{
 				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
 				edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
+
+				allready_saved = true;
+
 				TxtBag.clear();
 			}
 			break;
@@ -666,6 +681,8 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 						free(buffer);
 					}
 				}
+
+				allready_saved = true;
 			}
 			if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
 			break;
@@ -719,7 +736,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 				break;
 			}
-			else if (LOWORD(lParam) * x_scale >= b2Rect.left && LOWORD(lParam) * x_scale <= b3Rect.right)
+			else if (LOWORD(lParam) * x_scale >= b2Rect.left && LOWORD(lParam) * x_scale <= b2Rect.right)
 			{
 				mciSendString(L"play .\\res\\snd\\select.wav", NULL, NULL, NULL);
 
