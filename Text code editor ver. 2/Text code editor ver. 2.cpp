@@ -21,7 +21,7 @@
 const wchar_t bWinClassName[]{ L"EditD2" };
 const char tmp_file[]{ ".\\res\\data\\temp.dat" };
 const wchar_t Ltmp_file[]{ L".\\res\\data\\temp.dat" };
-const char help_file[]{ ".\\res\\data\\help.dat" };
+const wchar_t help_file[]{ L".\\res\\data\\help.dat" };
 const char autosave_file[]{ ".\\res\\data\\autosave.dat" };
 const wchar_t Lautosave_file[]{ L".\\res\\data\\autosave.dat" };
 
@@ -91,12 +91,15 @@ edit::RANDIT RandIt{};
 
 edit::BAG<wchar_t> TxtBag;
 
+wchar_t* help_buffer{ nullptr };
+
 ID2D1Factory* iFactory{ nullptr };
 ID2D1HwndRenderTarget* Draw{ nullptr };
 ID2D1HwndRenderTarget* LogoDraw{ nullptr };
 
 ID2D1SolidColorBrush* statBrush{ nullptr };
 ID2D1SolidColorBrush* txtBrush{ nullptr };
+ID2D1SolidColorBrush* helptxtBrush{ nullptr };
 ID2D1SolidColorBrush* hgltBrush{ nullptr };
 
 ID2D1RadialGradientBrush* b1BckgBrush{ nullptr };
@@ -141,6 +144,7 @@ void ClearResources()
 	if (!FreeMem(&LogoDraw))LogErr(L"Error unloading D2D1HwndRenderTarget !");
 	if (!FreeMem(&statBrush))LogErr(L"Error unloading D2D1 statBrush !");
 	if (!FreeMem(&txtBrush))LogErr(L"Error unloading D2D1 txtBrush !");
+	if (!FreeMem(&helptxtBrush))LogErr(L"Error unloading D2D1 txtBrush !");
 	if (!FreeMem(&hgltBrush))LogErr(L"Error unloading D2D1 hgltBrush !");
 	if (!FreeMem(&b1BckgBrush))LogErr(L"Error unloading D2D1 b1BckgBrush !");
 	if (!FreeMem(&b2BckgBrush))LogErr(L"Error unloading D2D1 b2BckgBrush !");
@@ -195,6 +199,40 @@ void InitEditor()
 	append_file = false;
 
 	SetWindowTextW(editHwnd, L"\0");
+}
+void ShowHelp()
+{
+	if (!edit::FileExist(help_file))
+	{
+		mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+
+		MessageBox(bHwnd, L"Липсва помощна информация за програмата !\n\nСвържете се с разработчика",
+			L"Липсва файл !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+		pause = false;
+		show_help = false;
+		return;
+	}
+
+	TxtBag.clear();
+
+	edit::LoadFile(TxtBag, help_file);
+	
+	mciSendString(L"play .\\res\\snd\\showhelp.wav", NULL, NULL, NULL);
+
+	if (!TxtBag.empty())
+	{
+		if (help_buffer)
+		{
+			free(help_buffer);
+			help_buffer = nullptr;
+		}
+		help_buffer = reinterpret_cast<wchar_t*>(calloc(TxtBag.size(), sizeof(wchar_t)));
+		
+		if (!help_buffer)throw edit::EXCEPTION(BAD_MEMORY);
+		else for (size_t i = 0; i < TxtBag.size(); ++i)help_buffer[i] = TxtBag[i];
+	
+		TxtBag.clear();
+	}
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -307,20 +345,19 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		SetMenu(hwnd, bBar);
 
 		editHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | ES_AUTOVSCROLL |
-			ES_MULTILINE, 0, 50, client_ex, client_ey, hwnd, NULL, bIns, NULL);
+			ES_MULTILINE | WS_CLIPSIBLINGS, 0, 50, client_ex, client_ey, hwnd, NULL, bIns, NULL);
 
-		statusHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE, 0, 0, (int)(scr_width), 50, hwnd, NULL, bIns, NULL);
+		statusHwnd = CreateWindow(L"STATIC", NULL, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 
+			0, 0, (int)(scr_width), 50, hwnd, NULL, bIns, NULL);
 		
-		logoHwnd = CreateWindow(L"EDIT", NULL, WS_CHILD | WS_VISIBLE, 0, 0, (int)(scr_width), int(scr_height), hwnd, NULL, bIns, 
+		logoHwnd = CreateWindow(L"STATIC", NULL, WS_CHILD | WS_VISIBLE,
+			0, 0, (int)(scr_width), int(scr_height), hwnd, NULL, bIns, 
 			NULL);
 		if (!editHwnd || !statusHwnd || !logoHwnd)
 		{
 			LogErr(L"Error creating edit control in main window !");
 			ErrExit(eClass);
 		}
-
-		SetFocus(editHwnd);
-		SetCaretPos(10, 55);
 
 		InitEditor();
 		break;
@@ -340,11 +377,11 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			edit::SaveFile(Lautosave_file, TxtBag, current_text_code, false);
 			allready_saved = false;
 		}
-		else if(!allready_saved)
+		else
 		{
 			int unsaved_txt_size{ GetWindowTextLengthW(editHwnd) + 1 };
 			
-			if (unsaved_txt_size > 1)
+			if (unsaved_txt_size > 1 && !allready_saved)
 			{
 				wchar_t* buffer{ reinterpret_cast<wchar_t*>(calloc(unsaved_txt_size, sizeof(wchar_t))) };
 			
@@ -387,10 +424,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		ScreenToClient(hwnd, &cur_pos);
 		if (LOWORD(lParam) == HTCLIENT)
 		{
-			in_client = true;
-			pause = false;
-
-			ShowWindow(logoHwnd, false);
+			if (!show_help)
+			{
+				in_client = true;
+				pause = false;
+				ShowWindow(logoHwnd, false);
+			}
 
 			if (cur_pos.y * y_scale < 50)
 			{
@@ -450,10 +489,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		}
 		else
 		{
-			in_client = false;
-			pause = true;
-
-			ShowWindow(logoHwnd, true);
+			if (!show_help)
+			{
+				in_client = false;
+				pause = true;
+				ShowWindow(logoHwnd, true);
+			}
 
 			if (b1Hglt || b2Hglt || b3Hglt)
 			{
@@ -601,47 +642,36 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 			break;
 
 		case mSave:
-			if (TxtBag.empty())
+		{
+			int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
+
+			if (buffer_size > 1)
 			{
-				int buffer_size{ GetWindowTextLengthW(editHwnd) + 1 };
+				wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
 
-				if (buffer_size > 1)
-				{
-					wchar_t* txt_buffer{ reinterpret_cast<wchar_t*>(calloc(buffer_size, sizeof(wchar_t))) };
-
-					if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
-					else
-					{
-						GetWindowTextW(editHwnd, txt_buffer, buffer_size);
-
-						TxtBag.clear();
-						for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
-						
-						edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
-					}
-					
-					if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
-					allready_saved = true;
-					TxtBag.clear();
-					free(txt_buffer);
-				}
+				if (!txt_buffer)throw edit::EXCEPTION(BAD_PTR);
 				else
 				{
-					mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
-					MessageBox(hwnd, L"Липсва текст, който да бъде запазен !\n\nПостарай се повече !",
-						L"Няма текст !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+					GetWindowTextW(editHwnd, txt_buffer, buffer_size);
+
+					TxtBag.clear();
+					for (int i = 0; i < buffer_size; ++i)TxtBag.push_back(txt_buffer[i]);
+
+					edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
 				}
-				break;
+
+				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
+				allready_saved = true;
+				TxtBag.clear();
+				free(txt_buffer);
 			}
 			else
 			{
-				if (edit::FileExist(Lautosave_file))std::remove(autosave_file);
-				edit::SaveFile(file_in_use, TxtBag, current_text_code, false);
-
-				allready_saved = true;
-
-				TxtBag.clear();
+				mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+				MessageBox(hwnd, L"Липсва текст, който да бъде запазен !\n\nПостарай се повече !",
+					L"Няма текст !", MB_OK | MB_APPLMODAL | MB_ICONERROR);
 			}
+		}
 			break;
 
 		case mLoad:
@@ -744,6 +774,23 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 				break;
 			}
+			else if (LOWORD(lParam) * x_scale >= b3Rect.left && LOWORD(lParam) * x_scale <= b3Rect.right)
+			{
+				if (!show_help)
+				{
+					show_help = true;
+					pause = true;
+					ShowWindow(logoHwnd, true);
+					ShowHelp();
+					break;
+				}
+				else
+				{
+					show_help = false;
+					pause = false;
+					break;
+				}
+			}
 		}
 		break;
 
@@ -791,8 +838,8 @@ void CreateResources()
 
 	if (!RegisterClass(&bWinClass))ErrExit(eClass);
 
-	bHwnd = CreateWindow(bWinClassName, L"TEXT EDITOR 2.0", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, win_x, win_y,
-		(int)(scr_width), (int)(scr_height), NULL, NULL, bIns, NULL);
+	bHwnd = CreateWindow(bWinClassName, L"TEXT EDITOR 2.0", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 
+		win_x, win_y, (int)(scr_width), (int)(scr_height), NULL, NULL, bIns, NULL);
 	if (!bHwnd)ErrExit(eWindow);
 	else
 	{
@@ -829,6 +876,12 @@ void CreateResources()
 			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Aqua), &statBrush);
 			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Cyan), &txtBrush);
 			hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Chartreuse), &hgltBrush);
+
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating D2D1 SolidColorBrushes for buttons !");
+				ErrExit(eD2D);
+			}
 
 			D2D1_GRADIENT_STOP gStops[2]{};
 			ID2D1GradientStopCollection* gColl{ nullptr };
@@ -884,6 +937,13 @@ void CreateResources()
 
 		if (LogoDraw)
 		{
+			hr = LogoDraw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DarkMagenta), &helptxtBrush);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating D2D1 help text SolidColorBrush !");
+				ErrExit(eD2D);
+			}
+
 			bmpLogo = Load(L".\\res\\img\\logo.png", LogoDraw);
 			if (!bmpLogo)
 			{
@@ -985,7 +1045,37 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 		if (pause)
 		{
-			if (show_help)continue;
+			if (show_help)
+			{
+				LogoDraw->BeginDraw();
+				LogoDraw->Clear(D2D1::ColorF(D2D1::ColorF::Aquamarine));
+				if (help_buffer)
+					LogoDraw->DrawTextW(help_buffer, 230, nrmFormat,
+						D2D1::RectF(10.0f, 60.0f, scr_width, scr_height), helptxtBrush);
+				LogoDraw->EndDraw();
+				
+				Draw->BeginDraw();
+
+				if (statBrush && txtBrush && hgltBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
+				{
+					Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
+
+					Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 20.0f, 25.0f), b1BckgBrush);
+					Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 20.0f, 25.0f), b2BckgBrush);
+					Draw->FillRoundedRectangle(D2D1::RoundedRect(b3Rect, 20.0f, 25.0f), b3BckgBrush);
+
+					if (!b1Hglt)Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, txtBrush);
+					else Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, hgltBrush);
+					if (!b2Hglt)Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, txtBrush);
+					else Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, hgltBrush);
+					if (!b3Hglt)Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, txtBrush);
+					else Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, hgltBrush);
+				}
+
+				Draw->EndDraw();
+				
+				continue;
+			}
 			if (LogoDraw)
 			{
 				LogoDraw->BeginDraw();
@@ -994,26 +1084,28 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 			}
 			continue;
 		}
-
-		Draw->BeginDraw();
-
-		if (statBrush && txtBrush && hgltBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
+		else
 		{
-			Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
-		
-			Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 20.0f, 25.0f), b1BckgBrush);
-			Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 20.0f, 25.0f), b2BckgBrush);
-			Draw->FillRoundedRectangle(D2D1::RoundedRect(b3Rect, 20.0f, 25.0f), b3BckgBrush);
+			Draw->BeginDraw();
 
-			if (!b1Hglt)Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, txtBrush);
-			else Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, hgltBrush);
-			if (!b2Hglt)Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, txtBrush);
-			else Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, hgltBrush);
-			if (!b3Hglt)Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, txtBrush);
-			else Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, hgltBrush);
+			if (statBrush && txtBrush && hgltBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
+			{
+				Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
+
+				Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 20.0f, 25.0f), b1BckgBrush);
+				Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 20.0f, 25.0f), b2BckgBrush);
+				Draw->FillRoundedRectangle(D2D1::RoundedRect(b3Rect, 20.0f, 25.0f), b3BckgBrush);
+
+				if (!b1Hglt)Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, txtBrush);
+				else Draw->DrawTextW(L"ЗАПАЗИ ТЕКСТ", 13, nrmFormat, b1TxtRect, hgltBrush);
+				if (!b2Hglt)Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, txtBrush);
+				else Draw->DrawTextW(L"ЗАРЕДИ ТЕКСТ", 13, nrmFormat, b2TxtRect, hgltBrush);
+				if (!b3Hglt)Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, txtBrush);
+				else Draw->DrawTextW(L"ПОМОЩ", 6, nrmFormat, b3TxtRect, hgltBrush);
+			}
+
+			Draw->EndDraw();
 		}
-		
-		Draw->EndDraw();
 	}
 	
 	return (int) bMsg.wParam;
